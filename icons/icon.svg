@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100">
+<defs><clipPath id="c"><circle cx="50" cy="50" r="34"/></clipPath></defs>
+<rect width="100" height="100" rx="22.0" fill="#0E1520"/>
+<g transform="translate(50 50) scale(1.0) translate(-50 -50)">
+<circle cx="50" cy="50" r="38" fill="#172230" stroke="#2A3746" stroke-width="2"/>
+<g clip-path="url(#c)"><g transform="rotate(-18 50 50)">
+<rect x="0" y="0" width="100" height="56" fill="#3B6C9C"/><rect x="0" y="56" width="100" height="44" fill="#7A5A3C"/>
+<line x1="0" y1="56" x2="100" y2="56" stroke="#E5EBF1" stroke-width="1.6"/>
+<g stroke="#E5EBF1" stroke-width="1.2" opacity=".85"><line x1="42" y1="46" x2="58" y2="46"/><line x1="45" y1="51" x2="55" y2="51"/><line x1="45" y1="61" x2="55" y2="61"/><line x1="42" y1="66" x2="58" y2="66"/></g>
+</g></g>
+<g fill="none" stroke="#EE9F4C" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M24 52 H40 L45 58"/><path d="M76 52 H60 L55 58"/></g>
+<circle cx="50" cy="52" r="3.2" fill="#EE9F4C"/>
+<path d="M50 14 l-4 7 h8z" fill="#EE9F4C"/>
+</g></svg>
