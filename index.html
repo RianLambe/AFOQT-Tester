@@ -370,6 +370,7 @@ table.colm sup{font-size:12px;color:var(--accent);vertical-align:top}
 .drive{max-width:720px;margin:0 auto;min-height:100%;display:flex;flex-direction:column;gap:14px;padding-block:14px calc(14px + env(safe-area-inset-bottom,0px));box-sizing:border-box}
 .dhead{display:flex;justify-content:space-between;align-items:center}
 .dstatus{font-family:var(--display);font-size:30px;font-weight:600;color:var(--accent)}
+.dheard{font-size:15px;color:var(--muted);min-height:1.3em;font-style:italic}
 .dq{font-size:20px;line-height:1.4}
 .dq .passage{font-size:17px}
 .dopts{display:flex;flex-direction:column;gap:8px;font-size:18px}
@@ -379,6 +380,7 @@ table.colm sup{font-size:12px;color:var(--accent);vertical-align:top}
 .dopts b{font-family:var(--mono);margin-right:6px}
 .dbtns{margin-top:auto;display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
 .dbtns .btn{min-height:64px;font-size:18px}
+.note.version{text-align:center;margin:18px 0 8px;font-family:var(--mono);font-size:12px}
 .hub{display:flex;flex-direction:column;gap:10px;margin-bottom:18px}
 .hub-go{width:100%;padding:15px 16px;font-size:18px;font-family:var(--display);letter-spacing:.02em}
 .seg{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
@@ -2281,7 +2283,8 @@ const DRIVE_SRC=[
  ['mm','Mental maths','Easy, in-head word problems']
 ];
 const MENTAL=['ar-dist','ar-time','ar-fuel','ar-disc','ar-pct','ar-int','ar-avg','ar-ratio','ar-opp','ar-catch','ar-climb','ar-scale','ar-frac','ar-fuelwt','ar-wind','ar-markup','ar-pctof','ar-tickets','ar-overtime','ar-commission','ar-rate','ar-descent','ar-perim','ar-lcm','ar-wavg'];
-const driveCfg=()=>Object.assign({subs:['wk','va','ai','ps'],mode:SR?'voice':'listen',rate:1,expl:true,think:6},store.drive||{});
+const defLang=()=>{const l=(navigator.language||'en-US');return /^en-(IE|GB|US|AU|CA|NZ|IN)$/i.test(l)?l:'en-US'};
+const driveCfg=()=>Object.assign({subs:['wk','va','ai','ps'],mode:SR?'voice':'listen',rate:1,expl:true,think:6,lang:defLang()},store.drive||{});
 /* turn screen text into something a speech voice reads naturally */
 function speakable(h){let t=String(h).replace(/<svg[\s\S]*?<\/svg>/g,'').replace(/<br\s*\/?>/g,'. ').replace(/<\/(p|li|div)>/g,'. ').replace(/<[^>]+>/g,'').replace(/&lt;/g,' less than ').replace(/&gt;/g,' greater than ').replace(/&amp;/g,' and ');
  t=t.replace(/(\d),(\d{3})/g,'$1$2').replace(/×/g,' times ').replace(/÷/g,' divided by ').replace(/−/g,' minus ').replace(/≤/g,' at most ').replace(/≥/g,' at least ').replace(/²/g,' squared').replace(/³/g,' cubed').replace(/°F/g,' degrees Fahrenheit').replace(/°C/g,' degrees Celsius').replace(/°/g,' degrees').replace(/%/g,' percent').replace(/π/g,' pi');
@@ -2295,26 +2298,86 @@ function say(text,D){return new Promise(res=>{if(!canSpeak||!D.on){res();return}
   const g=setTimeout(fin,1500+u.text.length*95/D.cfg.rate);u.onend=fin;u.onerror=fin;D.utter=u;speechSynthesis.speak(u)};next()})}
 /* listen once; resolves {alts:[...]} or {error} */
 function hear(D,ms=9000){return new Promise(res=>{if(!SR){res({error:'unsupported'});return}let r;try{r=new SR()}catch(e){res({error:'unsupported'});return}
- r.lang='en-US';r.interimResults=false;r.maxAlternatives=5;r.continuous=false;let got=null,done=false;const fin=v=>{if(done)return;done=true;clearTimeout(t);try{r.abort()}catch(e){}res(v)};
- r.onresult=e=>{const alts=[];for(const res0 of e.results)for(let k=0;k<res0.length;k++)alts.push(res0[k].transcript);got={alts};fin(got)};r.onerror=e=>fin({error:e.error||'error'});r.onend=()=>fin(got||{error:'no-speech'});
+ r.lang=(D.cfg&&D.cfg.lang)||'en-US';r.interimResults=true;r.maxAlternatives=5;r.continuous=false;let got=null,done=false,interim='';const fin=v=>{if(done)return;done=true;clearTimeout(t);try{r.abort()}catch(e){}res(v)};
+ r.onresult=e=>{const alts=[];let fin0=false;for(const res0 of e.results){if(res0.isFinal)fin0=true;for(let k=0;k<res0.length;k++)alts.push(res0[k].transcript)}if(fin0){got={alts};fin(got)}else{interim=alts[0]||interim;if(D.onInterim)D.onInterim(interim)}};r.onerror=e=>fin(e.error==='no-speech'&&interim?{alts:[interim]}:{error:e.error||'error'});r.onend=()=>fin(got||(interim?{alts:[interim]}:{error:'no-speech'}));
  const t=setTimeout(()=>{try{r.stop()}catch(e){}setTimeout(()=>fin(got||{error:'no-speech'}),800)},ms);D.rec=r;try{r.start()}catch(e){fin({error:'start'})}})}
-const LETTER_WORDS={0:['a','ay','alpha','alfa','eh'],1:['b','bee','be','bravo'],2:['c','see','sea','si','charlie'],3:['d','dee','delta'],4:['e','ee','echo']};
-const normT=s=>String(s).toLowerCase().replace(/<[^>]+>/g,' ').replace(/[^a-z0-9.\s]/g,' ').replace(/\s+/g,' ').trim();
-/* work out which option the person said */
-function matchAnswer(alts,q){const n=q.options.length;
- for(const a of alts){const t=normT(a);const w=t.split(' ');
-  if(/\b(repeat|again|say that again|what)\b/.test(t)&&w.length<=4)return {cmd:'repeat'};
-  if(/\b(skip|pass|next|don.?t know|no idea|not sure)\b/.test(t))return {cmd:'skip'};
-  if(/\b(stop|quit|end|finish|exit)\b/.test(t)&&w.length<=3)return {cmd:'stop'};
-  if(/\b(pause|wait|hold on)\b/.test(t)&&w.length<=3)return {cmd:'pause'};
-  const m=t.match(/\b(?:option|answer|letter|it.?s|is|choose|pick)\s+([a-z]+)\b/);const cand=m?[m[1]]:(w.length<=2?w:[]);
-  for(const c of cand)for(let k=0;k<n;k++)if(LETTER_WORDS[k].includes(c))return {i:k,how:'letter'}}
- /* match the content of an option */
- let best=-1,bs=0,second=0;const nums=s=>(normT(s).match(/\d+(\.\d+)?/g)||[]).join(' ');
- for(let k=0;k<n;k++){const o=normT(speakable(q.options[k]));const ow=o.split(' ').filter(x=>x.length>1);if(!ow.length)continue;let sc=0;
-  for(const a of alts){const t=normT(a);const tw=new Set(t.split(' '));const hit=ow.filter(x=>tw.has(x)).length/ow.length;let s2=hit;const on=nums(o);if(on&&nums(t)===on)s2=Math.max(s2,.95);if(t===o)s2=1;sc=Math.max(sc,s2)}
-  if(sc>bs){second=bs;bs=sc;best=k}else if(sc>second)second=sc}
- if(best>=0&&bs>=.6&&bs-second>=.2)return {i:best,how:'words'};return null}
+/* ================= v15: robust spoken-answer matching ================= */
+/* Everything a speech recognizer is likely to hear when someone says a letter */
+const LETTER_WORDS={0:['a','ay','aye','eh','ey','hey','hay','ae','ei','eight','8','alpha','alfa','alpa','apple','ah','yay'],
+ 1:['b','be','bee','bea','bi','beat','bravo','brava','bravel','ve','vee','p','pee','pea','dee b'],
+ 2:['c','see','sea','si','she','cee','seat','charlie','charley','charly','sí','ce','cy','sie'],
+ 3:['d','dee','de','di','the','tea','tee','delta','dealt','deal','t','dee d'],
+ 4:['e','ee','he','ye','eee','echo','eco','ego','eat','e.']};
+const ORD={first:0,one:0,'1':0,'1st':0,second:1,two:1,'2':1,'2nd':1,third:2,three:2,'3':2,'3rd':2,fourth:3,four:3,'4':3,'4th':3,fifth:4,five:4,'5':4,'5th':4,last:-1};
+const LEAD=/^(?:(?:um+|uh+|er+|erm|so|okay|ok|well|i think|i'?d say|i say|i guess|my answer is|the answer is|answer|answers|it'?s|its|it is|is|i'?ll go with|go with|going with|i choose|choose|pick|i pick|option|options|letter|choice|number)\s+)+/;
+const STOP=new Set('a an the of to is are was be by for in on at and or it its it\'s as with that this from into than then so um uh er erm like i think my answer okay ok well per'.split(' '));
+const NUMW={zero:0,oh:0,one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,eleven:11,twelve:12,thirteen:13,fourteen:14,fifteen:15,sixteen:16,seventeen:17,eighteen:18,nineteen:19,twenty:20,thirty:30,forty:40,fourty:40,fifty:50,sixty:60,seventy:70,eighty:80,ninety:90};
+const MULT={hundred:100,thousand:1000,million:1e6};
+/* "three hundred and forty five point five" → "345.5" */
+function wordsToNums(t){const w=t.split(' ');const out=[];let i=0;
+ while(i<w.length){if(!(w[i] in NUMW)&&!(w[i] in MULT&&i+1<w.length&&false)&&!(w[i]==='a'&&MULT[w[i+1]])){out.push(w[i]);i++;continue}
+  let total=0,cur=0,used=0,dec='';
+  while(i<w.length){const x=w[i];if(x in NUMW){cur+=NUMW[x];used++;i++}else if(x==='a'&&MULT[w[i+1]]){cur+=1;i++}else if(x in MULT&&used+cur>0){const m=MULT[x];if(m===100)cur=(cur||1)*100;else{total+=(cur||1)*m;cur=0}used++;i++}else if(x==='and'&&used&&(w[i+1] in NUMW)){i++}else if(x==='point'&&used&&(w[i+1] in NUMW)){i++;while(i<w.length&&(w[i] in NUMW)&&NUMW[w[i]]<10){dec+=NUMW[w[i]];i++}break}else break}
+  out.push(String(total+cur)+(dec?'.'+dec:''))}
+ return out.join(' ')}
+/* normalize text for comparison; keeps decimal points inside numbers only */
+function normA(s){let t=String(s).toLowerCase().replace(/<[^>]+>/g,' ').replace(/&[a-z]+;/g,' ').replace(/(\d),(?=\d{3})/g,'$1').replace(/(\d)\.(\d)/g,'$1§$2').replace(/['’]/g,'').replace(/-/g,' ').replace(/[^a-z0-9§\s]/g,' ').replace(/§/g,'.').replace(/\s+/g,' ').trim();
+ t=wordsToNums(t);t=t.replace(/\b(\d+) percent\b/g,'$1 percent').replace(/\b(\d+)\.0+\b/g,'$1');return t}
+const stem=w=>w.length<=4?w:w.replace(/(ies)$/,'y').replace(/(ing|edly|ed|ly|es|s)$/,'').replace(/(.)\1$/,'$1');
+function lev(a,b){if(a===b)return 0;const m=a.length,n=b.length;if(!m||!n)return m||n;let p=Array.from({length:n+1},(_,j)=>j);for(let i=1;i<=m;i++){const c=[i];for(let j=1;j<=n;j++)c[j]=Math.min(p[j]+1,c[j-1]+1,p[j-1]+(a[i-1]===b[j-1]?0:1));p=c}return p[n]}
+function sndx(w){const c={b:1,f:1,p:1,v:1,c:2,g:2,j:2,k:2,q:2,s:2,x:2,z:2,d:3,t:3,l:4,m:5,n:5,r:6};let o=w[0]||'',last=c[w[0]]||0;for(const ch of w.slice(1)){const v=c[ch]||0;if(v&&v!==last)o+=v;if(!'hw'.includes(ch))last=v}return (o+'000').slice(0,4)}
+/* similarity of two single words, 0..1 */
+function wsim(a,b){if(a===b)return 1;const na=/^\d/.test(a),nb=/^\d/.test(b);if(na||nb)return na&&nb&&parseFloat(a)===parseFloat(b)?1:0;
+ if(stem(a)===stem(b))return .95;const L=Math.max(a.length,b.length);const d=lev(a,b);let s=1-d/L;if(L<=3)s=d===0?1:0;if(a.length>=4&&b.length>=4&&sndx(a)===sndx(b))s=Math.max(s,.8);if(a.length>=5&&b.length>=5&&(a.startsWith(b.slice(0,5))||b.startsWith(a.slice(0,5))))s=Math.max(s,.75);return s}
+const toks=s=>normA(s).split(' ').filter(w=>w&&!STOP.has(w));
+/* score how well a spoken phrase fits one option: {f, rec, prec, hits} */
+function optScore(said,opt){const T=toks(said),O=toks(opt);if(!T.length||!O.length)return {f:0,rec:0,prec:0};
+ const bestFor=(w,arr)=>arr.reduce((m,x)=>Math.max(m,wsim(w,x)),0);const ro=O.map(w=>bestFor(w,T)),pt=T.map(w=>bestFor(w,O));
+ const thr=v=>v>=.7?v:v*.4;const rec=ro.map(thr).reduce((a,b)=>a+b,0)/O.length,prec=pt.map(thr).reduce((a,b)=>a+b,0)/T.length;const f=rec+prec?2*rec*prec/(rec+prec):0;
+ /* word order matters ("light : dark" is not "dark : light"): longest common subsequence of matched words */
+ const Tm=T.filter(w=>O.some(x=>wsim(w,x)>=.7)),Om=O.filter(w=>T.some(x=>wsim(w,x)>=.7));let lcs=0;if(Tm.length&&Om.length){const dp=Array.from({length:Tm.length+1},()=>Array(Om.length+1).fill(0));for(let i=1;i<=Tm.length;i++)for(let j=1;j<=Om.length;j++)dp[i][j]=wsim(Tm[i-1],Om[j-1])>=.7?dp[i-1][j-1]+1:Math.max(dp[i-1][j],dp[i][j-1]);lcs=dp[Tm.length][Om.length]/Math.max(Tm.length,Om.length)}
+ let sc=f*(.7+.3*lcs);const sn=' '+normA(said)+' ',on=' '+normA(opt)+' ';
+ if(sn.trim()===on.trim())sc=1.2;else if(on.trim().length>=3&&sn.includes(on)&&prec>=.9)sc=Math.max(sc,1+on.length/1000);else if(sn.trim().split(' ').length>=2&&on.includes(sn))sc=Math.max(sc,.9);
+ return {f:sc,rec,prec}}
+function letterOf(tokens){const t=tokens.join(' ');for(let k=0;k<5;k++)if(LETTER_WORDS[k].includes(t))return k;return null}
+/* work out which option the person said. Returns {i, how, sure} | {cmd} | {i, confirm:true} | null */
+function matchAnswer(alts,q){const n=q.options.length;const A=alts.map(a=>String(a||'')).filter(a=>a.trim());if(!A.length)return null;
+ for(const raw of A){const t=normA(raw);const w=t.split(' ');if(q.options.some(o=>optScore(raw,speakable(o)).f>=.85))continue;
+  if(/\b(repeat|again|say that again|say it again|what was that|pardon|come again|one more time)\b/.test(t)&&w.length<=5)return {cmd:'repeat'};
+  if(/\b(skip|pass|next question|dont know|do not know|no idea|not sure|give up|tell me)\b/.test(t))return {cmd:'skip'};
+  if(/^(stop|quit|end|finish|exit|stop now|end session|stop session)$/.test(t))return {cmd:'stop'};
+  if(/^(pause|wait|hold on|hang on)$/.test(t))return {cmd:'pause'}}
+ /* words that are letters but could also be part of an answer: only count them when no option uses that word */
+ const optWords=new Set(q.options.flatMap(o=>normA(speakable(o)).split(' ')));const optNums=q.options.map(o=>(normA(speakable(o)).match(/\d+(\.\d+)?/g)||[]).map(Number));
+ const CLEAN_LETTERS=new Set(['a','b','c','d','e','alpha','alfa','bravo','charlie','delta','echo']);
+ for(const raw of A){const full=normA(raw);const t=full.replace(LEAD,'').replace(/\b(please|thanks|thank you)\b/g,'').trim();const w=t.split(' ').filter(Boolean);if(!w.length)continue;
+  /* a bare number that is one of the options' numbers is an answer, not a letter */
+  if(w.length<=3&&/^\d/.test(w[0])&&optNums.some(ns=>ns.includes(parseFloat(w[0]))))continue;
+  const said=w.join(' ');let k=letterOf(w);if(k==null&&w.length===2)k=letterOf([said]);
+  if(k!=null&&!CLEAN_LETTERS.has(said)&&optWords.has(said)&&!LEAD.test(full+' '))k=null;
+  if(k==null){const m=said.match(/^(?:the )?(first|second|third|fourth|fifth|last)(?: one| option| answer)?$/);if(m&&(/ (one|option|answer)$/.test(said)||!optWords.has(m[1]))&&/(one|option|answer)$|^(?:the )/.test(said))k=m[1]==='last'?n-1:ORD[m[1]]}
+  if(k==null&&w.length<=2&&/^(1|2|3|4|5)$/.test(w[0])&&/^(option|number|choice|answer|letter)\b/.test(full))k=ORD[w[0]];
+  if(k!=null&&k<n)return {i:k,how:'letter',sure:true};
+  /* "B, arrogant": a letter followed by its answer. Only trust it if that answer really is that option's text */
+  if(w.length>=2){const k2=letterOf([w[0]]);if(k2!=null&&k2<n){const rest=w.slice(1).join(' ');const scs=q.options.map(o=>optScore(rest,speakable(o)).f);const top=scs.indexOf(Math.max(...scs));const sorted=[...scs].sort((x,y)=>y-x);if(top===k2&&scs[k2]>=.5&&sorted[0]-sorted[1]>=.1)return {i:k2,how:'letter',sure:true}}}}
+ /* content of an option */
+ const optsTxt=q.options.map(o=>speakable(o));let best=-1,bs=0,second=0,bestRec=0;
+ for(let k=0;k<n;k++){let sc=0,rc=0;for(const raw of A){const r=optScore(normA(raw).replace(LEAD,''),optsTxt[k]);if(r.f>sc){sc=r.f;rc=r.rec}}
+  if(sc>bs){second=bs;bs=sc;best=k;bestRec=rc}else if(sc>second)second=sc}
+ /* numbers: the spoken numbers and an option's numbers are the same set */
+ for(const raw of A){const nums=(normA(raw).match(/\d+(\.\d+)?/g)||[]).map(Number);if(!nums.length)continue;const hits=[];
+  for(let k=0;k<n;k++){const on=(normA(optsTxt[k]).match(/\d+(\.\d+)?/g)||[]).map(Number);if(on.length&&on.every(v=>nums.includes(v))&&nums.every(v=>on.includes(v)))hits.push(k)}
+  if(hits.length===1&&(bs<.8||best===hits[0]))return {i:hits[0],how:'number',sure:true};
+  if(hits.length===2&&bs-second<.15)return {pair:hits.slice().sort((a,b)=>a-b)}}
+ if(best<0)return null;const margin=bs-second;
+ if(bs>=.8&&margin>=.15||bs>=.62&&margin>=.25)return {i:best,how:'words',sure:true};
+ if(bs>=.42&&margin>=.05)return {i:best,how:'words',confirm:true};
+ /* two options fit about equally: ask which one */
+ if(bs>=.55){const sc2=[];for(let k=0;k<n;k++){let v=0;for(const raw of A)v=Math.max(v,optScore(raw,optsTxt[k]).f);sc2.push([v,k])}sc2.sort((a,b)=>b[0]-a[0]);if(sc2[1][0]>=.5&&sc2[0][0]-sc2[2][0]>=.15)return {pair:[sc2[0][1],sc2[1][1]].sort((a,b)=>a-b)}}
+ return null}
+/* yes / no for confirmations */
+function yesNo(alts){for(const a of alts){const t=normA(a);if(/^(yes|yeah|yep|yup|ya|aye|correct|right|thats right|that is right|affirmative|sure|yes please|exactly|uh huh|mhm|confirm|thats it|that one)\b/.test(t))return true;if(/^(no|nope|nah|negative|wrong|not that|incorrect|no thanks|neither)\b/.test(t))return false}return null}
+
 function driveQueue(cfg){const pools=[];for(const id of cfg.subs){if(id==='mm')pools.push(()=>makeQ(subById('ar'),{diff:'easy',headOnly:true},pick(MENTAL)));
   else if(id==='ai')pools.push(()=>{for(let k=0;k<20;k++){const q=makeQ(subById('ai'),D_STATE.ai);if(q&&q.kind!=='fig')return q}return null});
   else if(id==='ps')pools.push(()=>{for(let k=0;k<30;k++){const q=makeQ(subById('ps'),D_STATE.ps);if(q&&/^ps-\d+$/.test(q.tag))return q}return null});
@@ -2322,12 +2385,13 @@ function driveQueue(cfg){const pools=[];for(const id of cfg.subs){if(id==='mm')p
 const D_STATE={wk:{},va:{},ai:{},ps:{},sj:{}};
 function driveSetup(){S=null;const c=driveCfg();
  page(`<div class="wrap"><button class="back" id="back">Home</button><div class="mast"><span class="eyebrow">Hands-free</span><h1>Drive mode</h1></div>
- <p class="lead">Each question is read aloud with its options. ${SR?'Say the letter (“B”, or “bravo”) or the answer itself.':'This browser can’t listen, so you’ll get listen-only mode: a pause to think, then the answer is read out.'} Set it up before you drive; once it starts you don’t need to look at or touch the screen.</p>
+ <p class="lead">Each question is read aloud with its options. ${SR?'Say the letter (“B”, or for best results “bravo”) or say the answer itself; close is good enough. If it isn’t sure, it asks “Did you mean…?” and you say yes or no.':'This browser can’t listen, so you’ll get listen-only mode: a pause to think, then the answer is read out.'} Set it up before you drive; once it starts you don’t need to look at or touch the screen.</p>
  <div class="group"><h2>What to study</h2><div class="settings">${DRIVE_SRC.map(([id,n,d])=>`<label class="check drow"><input type="checkbox" data-ds="${id}" ${c.subs.includes(id)?'checked':''}><span><b>${n}</b><span class="note">${d}</span></span></label>`).join('')}</div></div>
  <div class="group"><h2>How it works</h2><div class="settings">
   <div class="srow2"><span>Answer by</span><span class="seg seg2"><button class="btn" data-dm="voice" aria-pressed="${c.mode==='voice'}" ${SR?'':'disabled'}>My voice</button><button class="btn" data-dm="listen" aria-pressed="${c.mode==='listen'}">Listen only</button></span></div>
   <div class="srow2"><label for="drate">Reading speed</label><span class="volrow"><input type="range" id="drate" min="0.7" max="1.4" step="0.05" value="${c.rate}"><span class="num" id="dratev">${c.rate.toFixed(2)}×</span></span></div>
   <div class="srow2"><label for="dthink">Thinking time (listen only)</label><span class="volrow"><input type="range" id="dthink" min="3" max="15" step="1" value="${c.think}"><span class="num" id="dthinkv">${c.think} s</span></span></div>
+  <div class="srow2"><label for="dlang">Speech recognition accent</label><select id="dlang">${[['en-IE','Irish English'],['en-GB','British English'],['en-US','American English']].map(([v,l])=>`<option value="${v}" ${c.lang===v?'selected':''}>${l}</option>`).join('')}</select></div>
   <label class="check"><input type="checkbox" id="dexpl" ${c.expl?'checked':''}> Read a short explanation after each answer</label>
   <button class="btn small" id="dtest">Test the voice${SR?' and microphone':''}</button><span class="note" id="dtestmsg" role="status"></span>
  </div></div>
@@ -2340,18 +2404,21 @@ function driveSetup(){S=null;const c=driveCfg();
  const rt=document.getElementById('drate');rt.oninput=()=>{c.rate=+rt.value;document.getElementById('dratev').textContent=c.rate.toFixed(2)+'×';save2()};
  const th=document.getElementById('dthink');th.oninput=()=>{c.think=+th.value;document.getElementById('dthinkv').textContent=c.think+' s';save2()};
  document.getElementById('dexpl').onchange=e=>{c.expl=e.target.checked;save2()};
+ document.getElementById('dlang').onchange=e=>{c.lang=e.target.value;save2();snd('toggle')};
  on('dtest',async()=>{const m=document.getElementById('dtestmsg');const D={on:true,cfg:c};m.textContent='Speaking…';await say('This is how questions will sound.'+(SR&&c.mode==='voice'?' Now say a letter, like B.':''),D);
   if(SR&&c.mode==='voice'){m.textContent='Listening…';const r=await hear(D,6000);if(r.error){m.textContent=r.error==='not-allowed'||r.error==='service-not-allowed'?'The microphone is blocked here. Allow it in your browser settings, or use Listen only.':r.error==='no-speech'?'Didn’t hear anything. Try again a little louder.':'The microphone isn’t available here. Listen only will still work.'}else{const g=matchAnswer(r.alts,{options:['a','b','c','d','e']});m.textContent=`Heard “${r.alts[0]}”${g&&g.i!=null?` → ${L[g.i]}`:''}. Working.`}}else m.textContent='Voice works.'},'toggle');
  on('dgo',()=>{if(!canSpeak)return;driveRun(c)},'start')}
 async function driveRun(cfg){const D={on:true,cfg,n:0,c:0,paused:false};S=null;let wake=null;try{navigator.wakeLock&&navigator.wakeLock.request('screen').then(w=>{wake=w}).catch(()=>{})}catch(e){}
  const next=driveQueue(cfg);document.body.classList.add('in-session');
- app.innerHTML=`<div class="drive"><div class="dhead"><span class="eyebrow">Drive mode</span><span class="num" id="dscore">0 of 0</span></div><div class="dstatus" id="dstat" aria-live="polite">Starting…</div><div class="dq" id="dq"></div><div class="dopts" id="dopts"></div>
+ app.innerHTML=`<div class="drive"><div class="dhead"><span class="eyebrow">Drive mode</span><span class="num" id="dscore">0 of 0</span></div><div class="dstatus" id="dstat" aria-live="polite">Starting…</div><div class="dheard" id="dheard"></div><div class="dq" id="dq"></div><div class="dopts" id="dopts"></div>
  <div class="dbtns"><button class="btn" id="drep">Repeat</button><button class="btn" id="dpause">Pause</button><button class="btn primary" id="dstop">Stop</button></div></div>`;
  const st=t=>{document.getElementById('dstat').textContent=t};const score=()=>{document.getElementById('dscore').textContent=`${D.c} of ${D.n}`};
  const stop=async(final=true)=>{if(!D.on)return;D.on=false;try{speechSynthesis.cancel()}catch(e){}try{D.rec&&D.rec.abort()}catch(e){}try{wake&&wake.release()}catch(e){}if(final)driveDone(D)};
  document.getElementById('dstop').onclick=()=>stop();document.getElementById('drep').onclick=()=>{D.repeat=true;try{speechSynthesis.cancel()}catch(e){}try{D.rec&&D.rec.abort()}catch(e){}};
  document.getElementById('dpause').onclick=()=>{D.paused=!D.paused;document.getElementById('dpause').textContent=D.paused?'Resume':'Pause';if(D.paused){try{speechSynthesis.cancel()}catch(e){}try{D.rec&&D.rec.abort()}catch(e){}st('Paused')}else D.resume&&D.resume()};
  const waitResume=()=>new Promise(r=>{D.resume=()=>{D.resume=null;r()}});
+ const heardLine=t=>{const el=document.getElementById('dheard');if(el)el.textContent=t?`Heard: “${t}”`:''};D.onInterim=heardLine;
+ const listen=async()=>{st('Listening…');heardLine('');snd('select',true);await new Promise(r=>setTimeout(r,320));const r=await hear(D);if(r.alts)heardLine(r.alts[0]);return r};
  await say(cfg.mode==='voice'?'Drive mode. Say the letter, or the answer. Say repeat, skip, pause or stop at any time.':'Drive mode, listen only. After each question you get a moment to think, then the answer.',D);
  while(D.on){const q=next();if(!q){await say('No questions available.',D);break}const t0=Date.now();
   document.getElementById('dq').innerHTML=q.stem;document.getElementById('dopts').innerHTML=q.options.map((o,i)=>`<div><b>${L[i]}</b> ${o}</div>`).join('');
@@ -2359,12 +2426,22 @@ async function driveRun(cfg){const D={on:true,cfg,n:0,c:0,paused:false};S=null;l
   let chosen=null,tries=0,skipped=false;
   while(D.on){if(D.paused)await waitResume();D.repeat=false;st('Reading the question');await readQ();if(!D.on)break;if(D.paused||D.repeat)continue;
    if(cfg.mode!=='voice'){st('Think…');snd('tick',true);let w=0;while(w<cfg.think*10&&D.on&&!D.paused&&!D.repeat){await new Promise(r=>setTimeout(r,100));w++}if(D.paused||D.repeat)continue;skipped=true;break}
-   st('Listening…');snd('select',true);const r=await hear(D);if(!D.on)break;if(D.paused||D.repeat)continue;
+   /* voice answer: listen, then confirm or narrow down when unsure, without re-reading the whole question */
+   let r=await listen();if(!D.on)break;if(D.paused||D.repeat)continue;
    if(r.error==='not-allowed'||r.error==='service-not-allowed'||r.error==='unsupported'||r.error==='start'){cfg.mode='listen';await say('I can’t use the microphone here, so I’ll switch to listen only.',D);continue}
-   if(r.error){tries++;if(tries>=2){skipped=true;break}st('Didn’t catch that');await say('I didn’t catch that. Say the letter, like B, or say repeat.',D);if(!D.on)break;st('Listening…');snd('select',true);const r2=await hear(D);if(r2.alts){const g=matchAnswer(r2.alts,q);if(g&&g.i!=null){chosen=g.i;break}}skipped=true;break}
-   const g=matchAnswer(r.alts,q);if(!g){tries++;if(tries>=2){skipped=true;break}await say(`I heard ${r.alts[0]}, but couldn’t match it. Say the letter.`,D);continue}
-   if(g.cmd==='repeat'){continue}if(g.cmd==='skip'){skipped=true;break}if(g.cmd==='stop'){await say('Stopping.',D);stop();return}if(g.cmd==='pause'){await say('Paused. Tap resume when you are ready.',D);D.paused=true;document.getElementById('dpause').textContent='Resume';st('Paused');await waitResume();continue}
-   chosen=g.i;break}
+   let misses=0,again=false,stopNow=false;
+   while(D.on&&!D.paused&&!D.repeat){
+    if(r.error){misses++;if(misses>=3){skipped=true;break}st('Didn’t catch that');await say(misses===1?'Sorry, I didn’t catch that. Say the letter.':'Say just the letter, like alpha, bravo or charlie.',D);if(!D.on)break;r=await listen();continue}
+    const g=matchAnswer(r.alts,q);
+    if(g&&g.cmd){if(g.cmd==='repeat'){again=true;break}if(g.cmd==='skip'){skipped=true;break}if(g.cmd==='stop'){stopNow=true;break}if(g.cmd==='pause'){await say('Paused. Tap resume when you are ready.',D);D.paused=true;document.getElementById('dpause').textContent='Resume';st('Paused');await waitResume();again=true;break}}
+    if(g&&g.i!=null&&!g.confirm){chosen=g.i;break}
+    if(g&&g.confirm){st('Checking');await say(`Did you mean ${L[g.i]}: ${q.options[g.i]}?`,D);if(!D.on)break;const r2=await listen();if(r2.alts){const yn=yesNo(r2.alts);if(yn===true){chosen=g.i;break}const g2=matchAnswer(r2.alts,q);if(g2&&g2.i!=null&&!g2.confirm){chosen=g2.i;break}if(yn===false){await say('OK. Which letter?',D);r=await listen();continue}}misses++;if(misses>=3){skipped=true;break}await say('Say the letter.',D);r=await listen();continue}
+    if(g&&g.pair){const [a,b]=g.pair;st('Checking');await say(`Did you mean ${L[a]}: ${q.options[a]}, or ${L[b]}: ${q.options[b]}?`,D);if(!D.on)break;const r2=await listen();if(r2.alts){const g2=matchAnswer(r2.alts,q);if(g2&&g2.i!=null&&g.pair.includes(g2.i)){chosen=g2.i;break}if(g2&&g2.pair&&g2.pair.length){}}
+     misses++;if(misses>=3){skipped=true;break}await say(`Say ${L[a]} or ${L[b]}.`,D);r=await listen();continue}
+    misses++;if(misses>=3){skipped=true;break}st('Not sure');await say(`I heard ${r.alts[0]}. Say the letter, or say repeat.`,D);if(!D.on)break;r=await listen()}
+   if(stopNow){await say('Stopping.',D);stop();return}
+   if(again)continue;if(!D.on)break;if(D.paused||D.repeat)continue;
+   break}
   if(!D.on)break;
   const ok=chosen===q.answer;const secs=Math.round((Date.now()-t0)/1000);
   if(cfg.mode==='voice'||chosen!=null){D.n++;if(ok)D.c++;record(q,skipped?null:chosen,secs);score()}
@@ -2534,6 +2611,7 @@ const SUBS=[
 /* real Form T order: Part A = VA, AR, WK, MK, RC, SJ, SDI; Part B = PS, TR, IC, BC, AI */
 const FULL_ORDER=['va','ar','wk','mk','rc','sj','sdi','ps','tr','ic','bc','ai'];
 const GROUPS=[['Pilot composite',['tr','ic','ai','ar','mk']],['Verbal',['va','wk','rc']],['Other subtests',['bc','ps','sj','sdi']]];
+const APP_VERSION='1.16',APP_BUILT='30 Oct 2026';
 const subById=id=>SUBS.find(s=>s.id===id);
 /* question types that need scratch paper; skipped in practice and the morning test when “In-head maths only” is on */
 const PAPER=new Set(['ar-h-mixadd','ar-h-workleave','ar-h-windleg','ar-h-compound','ar-h-fuelplan','ar-h-avgremove','mk-h-quad2','mk-h-sys2','mk-h-arc','mk-h-ineq2','ar-mix','ar-wavg','ar-avg','ar-age','ar-markup','ar-rtavg','ar-overtime','ar-descent','ar-fill','mk-pyth','mk-sqrt','mk-gcf','mk-dist','mk-mixed','ps-hp']);
@@ -2807,6 +2885,7 @@ function settings(){S=null;
  <div class="group"><h2>Instrument Comprehension styles</h2><div class="settings"><p class="note">Each question picks one style for each instrument from the ones you tick, so you don’t get used to one look. Keep at least one ticked in each row.</p>
   ${[['h','Artificial horizon',k=>attSVG(20,35,k)],['c','Compass',k=>compassSVG(45,k)],['a','Aircraft',k=>planeSVG(45,20,35,k)]].map(([g,t,fn])=>`<span class="label">${t}</span><div class="stylegrid">${IC_STYLES[g].map(([k,l])=>`<label class="stylebox"><span class="thumb">${fn(k)}</span><span><input type="checkbox" data-ic="${g}:${k}" ${icOn(g,k)?'checked':''}> ${l}</span></label>`).join('')}</div>`).join('')}
   <div class="row"><button class="btn small" id="icprev">Try a question</button></div></div></div>
+ <p class="note version">Version ${APP_VERSION} · built ${APP_BUILT} · ${(window.matchMedia&&matchMedia('(display-mode: standalone)').matches)||navigator.standalone?'installed app':'running in the browser'}</p>
  </div>`);
  on('back',home,'back');
  const xf=document.getElementById('xfer'),xc=document.getElementById('xcode'),xg=document.getElementById('xgo'),xm=document.getElementById('xmsg'),xl=document.getElementById('xlab');let xmode='',armed=false;
